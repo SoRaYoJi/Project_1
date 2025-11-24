@@ -1,0 +1,8 @@
+torch
+torchvision
+Pillow
+fastapi
+uvicorn
+matplotlib
+numpy
+pip install opencv-python
