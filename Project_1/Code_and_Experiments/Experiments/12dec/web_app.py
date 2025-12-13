@@ -22,7 +22,7 @@ def load_engine():
         from tensorflow.keras.models import load_model
         
         # ชื่อไฟล์ต้องตรงกับใน GitHub เป๊ะๆ
-        MODEL_PATH = 'thai_digit_model_64x64_Thickness_V2.keras'
+        MODEL_PATH = 'D:\Project_1\Project_1\Code_and_Experiments\Experiments\12dec\thai_digit_model_64x64_Thickness_V2.keras'
         
         if not os.path.exists(MODEL_PATH):
             return None, "ไม่พบไฟล์โมเดล (กรุณาเช็คชื่อไฟล์ใน GitHub)"
