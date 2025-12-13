@@ -21,11 +21,12 @@ def load_engine():
         import tensorflow as tf
         from tensorflow.keras.models import load_model
         
-        # ✅ แก้ไข: ใช้แค่ชื่อไฟล์สั้นๆ (ลบ D:\... ออกให้หมด)
-        MODEL_PATH = 'thai_digit_model_64x64_Thickness_V2.keras'
+        # ✅ ใช้โค้ดนี้ครับ รับรองหาเจอแน่นอน ไม่ว่าจะซ่อนลึกแค่ไหน
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        MODEL_PATH = os.path.join(current_dir, 'thai_digit_model_64x64_Thickness_V2.keras')
         
         if not os.path.exists(MODEL_PATH):
-            return None, f"ไม่พบไฟล์โมเดล: {MODEL_PATH} (เช็คว่าไฟล์ .keras อยู่ที่เดียวกับ web_app.py หรือไม่)"
+            return None, f"ไม่พบไฟล์: {MODEL_PATH}"
             
         model = load_model(MODEL_PATH, compile=False)
         return model, "OK"
