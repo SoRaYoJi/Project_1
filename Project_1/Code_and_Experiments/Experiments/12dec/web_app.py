@@ -8,7 +8,7 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 # --- ตั้งค่าหน้าเว็บ ---
 st.set_page_config(page_title="ทายเลขไทย AI", page_icon="🇹🇭")
 
-st.title("🇹🇭 ระบบทายลายมือเลขไทย")
+st.title("ระบบทายลายมือเลขไทย")
 st.info("สถานะ: 🟢 เว็บไซต์โหลดเสร็จแล้ว (กำลังรอโหลดสมอง AI...)")
 
 # --- ฟังก์ชันโหลด AI ---
@@ -88,7 +88,6 @@ if uploaded_file is not None:
                     labels = ['๐', '๑', '๒', '๓', '๔', '๕', '๖', '๗', '๘', '๙']
                     result_char = labels[predicted_index]
 
-                    # st.balloons()  <-- ลบออกให้แล้วครับ
                     st.markdown(f"# ผลลัพธ์: <span style='color:green; font-size:40px'>{result_char}</span>", unsafe_allow_html=True)
                     st.write(f"ความมั่นใจ: {confidence:.2f}%")
                     
