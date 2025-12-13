@@ -1,56 +1,51 @@
 import os
 import streamlit as st
 
-# --- 🔴 ยาแก้ค้าง (ต้องอยู่บรรทัดบนสุด ห้ามย้าย) ---
-# 1. บังคับใช้ CPU เท่านั้น (ป้องกัน GPU ค้าง)
+# --- 🔴 ยาแก้ค้าง (ต้องอยู่บรรทัดบนสุด) ---
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-# 2. ปิด Log ที่รบกวนการทำงาน
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
-# --- ตั้งค่าหน้าเว็บ (ส่วนนี้จะทำงานทันที ทำให้ไม่จอขาว) ---
+# --- ตั้งค่าหน้าเว็บ ---
 st.set_page_config(page_title="ทายเลขไทย AI", page_icon="🇹🇭")
 
 st.title("🇹🇭 ระบบทายลายมือเลขไทย")
 st.info("สถานะ: 🟢 เว็บไซต์โหลดเสร็จแล้ว (กำลังรอโหลดสมอง AI...)")
 
-# --- ฟังก์ชันโหลด AI (แยกออกมาทำงานทีหลัง) ---
+# --- ฟังก์ชันโหลด AI ---
 @st.cache_resource
 def load_engine():
     try:
-        # Import ตรงนี้เพื่อให้หน้าเว็บขึ้นมาก่อน
         import cv2
         import numpy as np
         from PIL import Image, ImageOps
         import tensorflow as tf
         from tensorflow.keras.models import load_model
         
+        # ชื่อไฟล์ต้องตรงกับใน GitHub เป๊ะๆ
         MODEL_PATH = 'thai_digit_model_64x64_Thickness_V2.keras'
         
         if not os.path.exists(MODEL_PATH):
-            return None, "ไม่พบไฟล์โมเดล"
+            return None, "ไม่พบไฟล์โมเดล (กรุณาเช็คชื่อไฟล์ใน GitHub)"
             
         model = load_model(MODEL_PATH, compile=False)
         return model, "OK"
     except Exception as e:
         return None, str(e)
 
-# --- ส่วนการทำงานหลัก ---
-# 1. เรียกโหลดโมเดล
-with st.spinner('กำลังปลุก AI... (ขั้นตอนนี้อาจใช้เวลา 10-20 วินาที)'):
+# --- โหลดโมเดล ---
+with st.spinner('กำลังปลุก AI... (รอสักครู่)'):
     model, status = load_engine()
 
-# 2. ตรวจสอบว่าโหลดผ่านไหม
 if status != "OK":
-    st.error(f"❌ โหลด AI ไม่สำเร็จ: {status}")
+    st.error(f"โหลด AI ไม่สำเร็จ: {status}")
     st.stop()
 else:
-    st.success("✅ AI พร้อมใช้งานแล้ว!")
+    st.success("AI พร้อมใช้งานแล้ว!")
 
-# 3. ส่วนอัปโหลดรูป
+# --- ส่วนอัปโหลดรูป ---
 uploaded_file = st.file_uploader("เลือกรูปภาพ...", type=["jpg", "png", "jpeg"])
 
 if uploaded_file is not None:
-    # ต้อง import library ซ้ำใน scope นี้เพื่อให้แน่ใจว่าใช้ได้
     import cv2
     import numpy as np
     from PIL import Image, ImageOps
@@ -63,7 +58,7 @@ if uploaded_file is not None:
 
     use_invert = st.checkbox("กลับสีภาพ (ใช้เมื่อตัวดำ พื้นขาว)", value=False)
     
-    if st.button('ทำนายผลเดี๋ยวนี้'):
+    if st.button('ทำนายผลเดี๋ยวนี้', type="primary"):
         if model is None:
             st.error("Model not loaded")
         else:
@@ -93,7 +88,7 @@ if uploaded_file is not None:
                     labels = ['๐', '๑', '๒', '๓', '๔', '๕', '๖', '๗', '๘', '๙']
                     result_char = labels[predicted_index]
 
-                    st.balloons()
+                    # st.balloons()  <-- ลบออกให้แล้วครับ
                     st.markdown(f"# ผลลัพธ์: <span style='color:green; font-size:40px'>{result_char}</span>", unsafe_allow_html=True)
                     st.write(f"ความมั่นใจ: {confidence:.2f}%")
                     
