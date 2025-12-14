@@ -1,0 +1,7 @@
+streamlit
+opencv-python-headless  # ใช้แทน cv2 (opencv-python) บนเซิร์ฟเวอร์
+numpy
+Pillow
+torch
+torchvision
+streamlit-drawable-canvas
