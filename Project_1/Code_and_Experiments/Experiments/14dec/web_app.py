@@ -185,10 +185,10 @@ st.header("✍️ วาดตัวเลขไทยเพื่อทำน�
 
 # สร้าง Drawing Canvas
 canvas_result = st_canvas(
-    fill_color="rgba(255, 255, 255, 0)",  # ไม่ใช้สีเติม
-    stroke_width=15,                      # ความหนาของเส้น
-    stroke_color="#000000",               # สีเส้น: ดำ (เพื่อให้ผู้ใช้วาดได้สะดวก)
-    background_color="#FFFFFF",           # พื้นหลัง: ขาว (เพื่อให้ผู้ใช้วาดได้สะดวก)
+    fill_color="rgba(255, 255, 255, 0)", # ไม่ใช้สีเติม
+    stroke_width=15, # ความหนาของเส้น
+    stroke_color="#000000", # สีเส้น: ดำ (เพื่อให้ผู้ใช้วาดได้สะดวก)
+    background_color="#FFFFFF", # พื้นหลัง: ขาว (เพื่อให้ผู้ใช้วาดได้สะดวก)
     height=200,
     width=200,
     drawing_mode="freedraw",
