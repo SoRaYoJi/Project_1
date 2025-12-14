@@ -177,8 +177,8 @@ canvas_result = st_canvas(
     stroke_width=15,                      # ความหนาของเส้น
     stroke_color="#000000",               # สีเส้น (ขาว)
     background_color="#FFFFFF",           # พื้นหลัง (ดำ)
-    height=200,
-    width=200,
+    height=400,
+    width=400,
     drawing_mode="freedraw",
     key="canvas",
 )
