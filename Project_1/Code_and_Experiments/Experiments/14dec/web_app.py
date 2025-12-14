@@ -175,8 +175,8 @@ st.header("✍️ วาดตัวเลขไทยเพื่อทำน�
 canvas_result = st_canvas(
     fill_color="rgba(255, 255, 255, 0)",  # ไม่ใช้สีเติม
     stroke_width=15,                      # ความหนาของเส้น
-    stroke_color="#FFFFFF",               # สีเส้น (ขาว)
-    background_color="#000000",           # พื้นหลัง (ดำ)
+    stroke_color="#000000",               # สีเส้น (ขาว)
+    background_color="#FFFFFF",           # พื้นหลัง (ดำ)
     height=200,
     width=200,
     drawing_mode="freedraw",
