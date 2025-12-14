@@ -60,24 +60,36 @@ class ThaiDigitNet(nn.Module):
 def preprocess_for_model(roi, target_size=(96, 96)):
     """
     1. Resize โดยคงสัดส่วน
-    2. แปะลงพื้นหลังดำ
+    2. แปะลงพื้นหลังดำ (Canvas = 0)
     3. แปลงเป็น Tensor (0-1)
+    
+    ROI ที่รับมาควรเป็น ตัวเลขสีขาว (255) พื้นหลังสีดำ (0)
     """
     h, w = roi.shape[:2]
     padding = 10 
+    
+    # คำนวณ Scale เพื่อคงสัดส่วนและมี Padding 
     scale = min((target_size[0] - padding*2) / w, (target_size[1] - padding*2) / h)
     
     new_w = int(w * scale)
     new_h = int(h * scale)
     
+    # ตรวจสอบขนาดไม่ให้เป็น 0
+    if new_w == 0 or new_h == 0:
+        return np.zeros(target_size, dtype=np.uint8), torch.zeros(1, 1, target_size[0], target_size[1], dtype=torch.float32)
+
     resized_roi = cv2.resize(roi, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    
+    # สร้าง Canvas พื้นหลังดำ (ค่า 0)
     canvas = np.zeros((target_size[1], target_size[0]), dtype=np.uint8)
     
+    # วางรูปที่ Resize แล้วลงตรงกลาง Canvas 
     x_offset = (target_size[0] - new_w) // 2
     y_offset = (target_size[1] - new_h) // 2
     
     canvas[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = resized_roi
     
+    # แปลงเป็น Tensor และ Rescale เป็น [0, 1]
     img_tensor = canvas.astype(np.float32) / 255.0
     img_tensor = torch.from_numpy(img_tensor).unsqueeze(0).unsqueeze(0)
     
@@ -166,17 +178,17 @@ uploaded_file = st.file_uploader("เลือกรูปภาพ...", type=["
 
 
 # =========================================================================
-# === 2. ส่วนวาดภาพ (Drawable Canvas) และการทำนายผลทันที ===
+# === 2. ส่วนวาดภาพ (Drawable Canvas) และการทำนายผลทันที (CLEANED) ===
 # =========================================================================
 st.markdown("---")
 st.header("✍️ วาดตัวเลขไทยเพื่อทำนายผลทันที")
 
 # สร้าง Drawing Canvas
 canvas_result = st_canvas(
-    fill_color="rgba(255, 255, 255, 0)",  # ไม่ใช้สีเติม
-    stroke_width=15,                      # ความหนาของเส้น
-    stroke_color="#000000",               # สีเส้น (ขาว)
-    background_color="#FFFFFF",           # พื้นหลัง (ดำ)
+    fill_color="rgba(255, 255, 255, 0)",  # ไม่ใช้สีเติม
+    stroke_width=15,                      # ความหนาของเส้น
+    stroke_color="#000000",               # สีเส้น: ดำ (เพื่อให้ผู้ใช้วาดได้สะดวก)
+    background_color="#FFFFFF",           # พื้นหลัง: ขาว (เพื่อให้ผู้ใช้วาดได้สะดวก)
     height=200,
     width=200,
     drawing_mode="freedraw",
@@ -188,7 +200,11 @@ if canvas_result.image_data is not None:
     drawn_img_array = canvas_result.image_data.astype(np.uint8)
     gray_drawn_img = cv2.cvtColor(drawn_img_array, cv2.COLOR_RGBA2GRAY)
 
-    # ตัดส่วนที่มีตัวเลขเท่านั้น
+    # 🛑 บรรทัดที่ถูกแก้ไข: กลับสีจาก ดำบนขาว เป็น ขาวบนดำ 
+    # เพื่อให้สอดคล้องกับโมเดล (ตัวเลขสีขาว, พื้นหลังสีดำ)
+    gray_drawn_img = cv2.bitwise_not(gray_drawn_img)
+    
+    # ตัดส่วนที่มีตัวเลขเท่านั้น (ตอนนี้ตัวเลขเป็นสีขาวแล้ว)
     _, thresh_canvas = cv2.threshold(gray_drawn_img, 20, 255, cv2.THRESH_BINARY)
     contours_canvas, _ = cv2.findContours(thresh_canvas, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
@@ -222,7 +238,8 @@ if canvas_result.image_data is not None:
             st.markdown(f"<h1 style='text-align: center; color: #E74C3C; font-size:80px;'>{char_out}</h1>", unsafe_allow_html=True)
             st.caption(f"ความมั่นใจ: {prob:.2f}%")
             
-            st.image(display_img_canvas, caption="ภาพที่เข้าโมเดล", width=96, clamp=True)
+            # แสดงภาพที่ถูกกลับสีและเตรียมเข้าโมเดล (พื้นหลังดำ ตัวเลขขาว)
+            st.image(display_img_canvas, caption="ภาพที่เข้าโมเดล (ขาวบนดำ)", width=96, clamp=True) 
             
         else:
             st.caption("กรุณาวาดตัวเลขให้ชัดเจนขึ้น")
@@ -239,7 +256,8 @@ if uploaded_file is not None:
 
     col_opt1, col_opt2 = st.columns(2)
     with col_opt1:
-        use_invert = st.checkbox("กลับสีภาพ (ใช้เมื่อตัวดำ พื้นขาว)", value=True, key="inv_upload")
+        # ค่าเริ่มต้นเป็น True เพราะรูปที่อัปโหลดมาส่วนใหญ่มักจะเป็นตัวอักษรดำบนพื้นหลังขาว
+        use_invert = st.checkbox("กลับสีภาพ (ใช้เมื่อตัวดำ พื้นขาว)", value=True, key="inv_upload") 
     with col_opt2:
         thinning_level = st.slider("ระดับลดความหนา (Erosion)", 0, 5, 1, help="ยิ่งเลขมาก เส้นยิ่งบาง", key="thin_upload")
     
@@ -252,9 +270,11 @@ if uploaded_file is not None:
                     img_array = np.array(image.convert('RGB'))
                     gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
 
+                    # ใช้ THRESH_BINARY_INV เมื่อต้องการกลับสี (ดำบนขาว -> ขาวบนดำ)
                     thresh_type = cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU if use_invert else cv2.THRESH_BINARY + cv2.THRESH_OTSU
                     _, binary_img = cv2.threshold(gray, 0, 255, thresh_type)
 
+                    # Erodes (ลดความหนาเส้น) ซึ่งใช้ได้ดีกับตัวเลขสีขาวบนพื้นหลังดำ
                     if thinning_level > 0:
                         kernel = np.ones((2, 2), np.uint8)
                         binary_img = cv2.erode(binary_img, kernel, iterations=thinning_level)
