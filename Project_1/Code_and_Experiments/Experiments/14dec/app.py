@@ -13,7 +13,7 @@ st.title("Thai Digit OCR – Professional Edition")
 @st.cache_resource
 def load_model():
     m = ThaiDigitNet()
-    m.load_state_dict(torch.load('models/model_read_numberthaiV1_pytorch.pth', map_location='cpu'))
+    m.load_state_dict(torch.load('Project_1/Code_and_Experiments/Experiments/14dec/models/model_read_numberthaiV1_pytorch.pth', map_location='cpu'))
     m.eval(); return m
 
 
@@ -37,3 +37,4 @@ if cnts:
         p = torch.softmax(model(t),1)
         i = p.argmax(1).item()
     st.markdown(f"<h1 style='text-align:center'>{labels[i]}</h1>", unsafe_allow_html=True)
+
