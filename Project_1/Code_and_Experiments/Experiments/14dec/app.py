@@ -34,7 +34,13 @@ if "history" not in st.session_state:
 
 # ------------------ UI ------------------
 header()
-tabs = st.tabs(["🧠 OCR", "🗂 History"])
+tabs = st.tabs([
+    "🧠 OCR", 
+    "🗂 History",
+    "🧮 Multi-Digit",
+    "📦 Batch OCR",
+    "📊 Dashboard",
+    "🗂 History"])
 
 # =================================================
 # 🧠 TAB 1 : OCR SYSTEM
@@ -128,3 +134,4 @@ with tabs[1]:
         st.info("No history yet. Start predicting digits first 👆")
 
 footer()
+
