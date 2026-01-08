@@ -1,17 +1,19 @@
 import cv2
 import numpy as np
-import torch
+from PIL import Image
 
+def preprocess_image(img, invert=False, threshold=True):
+    img = img.convert("L")
+    img = np.array(img)
 
-def preprocess_digit(roi, size=96):
-    h, w = roi.shape[:2]
-    if h == 0 or w == 0:
-     return None, None
-    scale = min((size-20)/w, (size-20)/h)
-    nw, nh = int(w*scale), int(h*scale)
-    roi = cv2.resize(roi, (nw, nh), cv2.INTER_AREA)
-    canvas = np.zeros((size, size), np.uint8)
-    x, y = (size-nw)//2, (size-nh)//2
-    canvas[y:y+nh, x:x+nw] = roi
-    t = torch.from_numpy(canvas/255.).float().unsqueeze(0).unsqueeze(0)
-    return canvas, t
+    if invert:
+        img = cv2.bitwise_not(img)
+
+    if threshold:
+        _, img = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+    img = cv2.resize(img, (96, 96))
+    img = img / 255.0
+    img = img.astype("float32")
+
+    return img
