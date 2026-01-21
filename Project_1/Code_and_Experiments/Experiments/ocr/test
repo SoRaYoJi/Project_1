@@ -1,0 +1,4 @@
+cd auth
+python -m http.server 8080
+
+streamlit run web_app.py

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <title>Thai OCR AI | Login</title>
+
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600&display=swap" rel="stylesheet">
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-app.js";
+    import {
+      getAuth,
+      GoogleAuthProvider,
+      GithubAuthProvider,
+      FacebookAuthProvider,
+      signInWithPopup
+    } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyBFxo7Psx-O13aFSjd8z8qJwf9-lL5jAW4",
+      authDomain: "project1-ocr-9da21.firebaseapp.com",
+      projectId: "project1-ocr-9da21",
+      appId: "1:600274567133:web:449313287ebfd8f9158034"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+
+    async function login(provider) {
+      const result = await signInWithPopup(auth, provider);
+      const token = await result.user.getIdToken();
+      window.location.href =
+        "http://localhost:8501/?token=" + token;
+    }
+
+    window.loginGoogle = () => login(new GoogleAuthProvider());
+    window.loginGithub = () => login(new GithubAuthProvider());
+    window.loginFacebook = () => login(new FacebookAuthProvider());
+  </script>
+
+  <style>
+    * {
+      font-family: 'Prompt', sans-serif;
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      height: 100vh;
+      background: radial-gradient(circle at top, #0f172a, #020617);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: white;
+    }
+
+    .card {
+      width: 480px;
+      padding: 40px;
+      background: rgba(15,23,42,0.9);
+      border-radius: 18px;
+      box-shadow: 0 25px 60px rgba(0,0,0,0.7);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 600;
+    }
+
+    .subtitle {
+      color: #94a3b8;
+      font-size: 14px;
+      margin-top: 6px;
+    }
+
+    .status {
+      margin: 20px 0;
+      padding: 12px;
+      background: #0f766e;
+      border-radius: 10px;
+      font-size: 14px;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 14px;
+      margin-top: 14px;
+      border-radius: 12px;
+      border: none;
+      font-size: 15px;
+      cursor: pointer;
+      font-weight: 500;
+      color: white;
+    }
+
+    .google { background: #2563eb; }
+    .github { background: #1f2937; }
+    .facebook { background: #1877f2; }
+
+    .btn:hover {
+      opacity: 0.9;
+      transform: translateY(-1px);
+    }
+
+    .footer {
+      margin-top: 24px;
+      text-align: center;
+      font-size: 12px;
+      color: #64748b;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="card">
+    <h1>ระบบทายลายมือเลขไทย TH</h1>
+    <div class="subtitle">AI OCR • Secure Login</div>
+
+    <div class="status">🟢 ระบบพร้อมใช้งาน</div>
+
+    <button class="btn google" onclick="loginGoogle()">🔑 Login with Google</button>
+    <button class="btn github" onclick="loginGithub()">🐙 Login with GitHub</button>
+    <button class="btn facebook" onclick="loginFacebook()">📘 Login with Facebook</button>
+
+    <div class="footer">
+      Authentication by Firebase
+    </div>
+  </div>
+</body>
+</html>
