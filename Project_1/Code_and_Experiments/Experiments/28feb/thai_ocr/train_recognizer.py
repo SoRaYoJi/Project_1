@@ -9,17 +9,19 @@ from thai_ocr.charset_thai_v1 import create_tokenizer, normalize_thai_text
 from thai_ocr.dataset_ctc import LineTSVDataset, pad_collate
 from thai_ocr.model_crnn_ctc import load_digit_backbone, CRNN_CTC
 
-
 def ctc_greedy_decode(logits, tokenizer):
+    """แปลง Logits จากโมเดลเป็นข้อความโดยเลือกตัวที่มีความน่าจะเป็นสูงสุด (Greedy Search)"""
     pred = logits.argmax(dim=-1)
     return [tokenizer.decode_greedy(row.tolist()) for row in pred]
 
-
 def cer(pred: str, gt: str) -> float:
+    """คำนวณ Character Error Rate (CER) ระหว่างข้อความที่ทำนายกับเฉลย"""
     pred = normalize_thai_text(pred)
     gt = normalize_thai_text(gt)
     if len(gt) == 0:
         return 0.0 if len(pred) == 0 else 1.0
+    
+    # ใช้ Dynamic Programming (Levenshtein distance) เพื่อหาจำนวนการแก้ไขตัวอักษร
     dp = list(range(len(gt) + 1))
     for i, pc in enumerate(pred, 1):
         prev = dp[0]
@@ -31,32 +33,34 @@ def cer(pred: str, gt: str) -> float:
             prev = cur
     return dp[-1] / max(1, len(gt))
 
-
 def main():
+    # ตั้งค่าเพิ่มประสิทธิภาพการประมวลผลบน GPU
     torch.backends.cudnn.benchmark = True
     torch.set_float32_matmul_precision("high")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Device:", device)
 
+    # เตรียม Tokenizer และนับจำนวนคลาสตัวอักษรทั้งหมด
     tokenizer = create_tokenizer()
     num_classes = len(tokenizer.id2ch)
     print("num_classes:", num_classes)
 
+    # พาธไฟล์ข้อมูลและโมเดลตั้งต้น
     train_tsv = "data/lines/train_100k.tsv"
     val_tsv   = "data/lines/val.tsv"
-
     digit_pth = "models/model_read_numberthaiV1_pytorch.pth"
 
+    # ไฮเปอร์พารามิเตอร์
     img_h = 32
     batch_size = 256 if device.type == "cuda" else 32
     num_workers = 8 if device.type == "cuda" else 0
-
     epochs = 100
-    freeze_epochs = 5
-    lr_head = 3e-4
-    lr_full = 1e-4
+    freeze_epochs = 5  # จำนวน epoch ที่จะยังไม่เทรนส่วน backbone
+    lr_head = 3e-4     # learning rate สำหรับส่วนหัว (Classifier)
+    lr_full = 1e-4     # learning rate เมื่อเริ่มเทรนทั้งโมเดล
 
+    # สร้าง Dataset และ DataLoader สำหรับอ่านข้อมูลเข้าโมเดล
     train_ds = LineTSVDataset(train_tsv, tokenizer, img_h=img_h)
     val_ds   = LineTSVDataset(val_tsv, tokenizer, img_h=img_h)
 
@@ -68,7 +72,7 @@ def main():
         pin_memory=(device.type == "cuda"),
         persistent_workers=(num_workers > 0),
         prefetch_factor=4 if num_workers > 0 else None,
-        collate_fn=pad_collate,
+        collate_fn=pad_collate, # จัดการเรื่อง padding ความยาวข้อความ
         drop_last=True,
     )
 
@@ -77,38 +81,41 @@ def main():
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
-        pin_memory=(device.type == "cuda"),
-        persistent_workers=(num_workers > 0),
-        prefetch_factor=2 if num_workers > 0 else None,
         collate_fn=pad_collate,
     )
 
+    # โหลดโมเดล Backbone (ตัวดึงฟีเจอร์) และสร้างโครงสร้าง CRNN_CTC
     backbone = load_digit_backbone(digit_pth)
     model = CRNN_CTC(backbone, num_classes=num_classes).to(device)
 
+    # เริ่มต้นด้วยการ Freeze (ล็อก) น้ำหนักของ Backbone ไว้ก่อน
     for p in model.backbone.parameters():
         p.requires_grad = False
 
+    # กำหนด Loss Function (CTC Loss) สำหรับงาน OCR
     ctc_loss = nn.CTCLoss(blank=tokenizer.blank_id, zero_infinity=True)
 
+    # ตั้งค่า Optimizer (AdamW) เลือกเฉพาะพารามิเตอร์ที่ไม่ได้ถูกล็อก
     optimizer = torch.optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=lr_head,
         weight_decay=1e-4,
     )
 
+    # ตัวช่วยสำหรับ Mixed Precision Training (เทรนเร็วขึ้นบน GPU)
     scaler = torch.amp.GradScaler("cuda", enabled=(device.type == "cuda"))
 
     os.makedirs("models", exist_ok=True)
     best_cer = 1e9
-
     total_start_time = time.time()
 
+    # --- เริ่มต้น Loop การเทรน ---
     for ep in range(1, epochs + 1):
         epoch_start = time.time()
         model.train()
         total_loss = 0.0
 
+        # เมื่อเทรนไปถึงระยะที่กำหนด จะทำการปลดล็อก Backbone เพื่อเทรนแบบ Fine-tuning
         if ep == freeze_epochs + 1:
             for p in model.backbone.parameters():
                 p.requires_grad = True
@@ -120,12 +127,14 @@ def main():
             y_concat = y_concat.to(device, non_blocking=True)
             y_lens = y_lens.to(device, non_blocking=True)
 
+            # ใช้ Autocast เพื่อประหยัด Memory และเพิ่มความเร็ว
             with torch.amp.autocast("cuda", enabled=(device.type == "cuda")):
                 logits = model(x)
+                # จัดรูปแบบ Output สำหรับ CTC Loss: (T, N, C)
                 log_probs = logits.log_softmax(dim=-1).permute(1, 0, 2)
                 T = log_probs.size(0)
 
-                # IMPORTANT: ใช้ T จริง
+                # กำหนดความยาวของ Input Sequence
                 x_lens = torch.full(
                     size=(log_probs.size(1),),
                     fill_value=T,
@@ -135,6 +144,7 @@ def main():
 
                 loss = ctc_loss(log_probs, y_concat, x_lens, y_lens)
 
+            # ขั้นตอนการอัปเดตน้ำหนัก (Backpropagation)
             optimizer.zero_grad(set_to_none=True)
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -144,7 +154,8 @@ def main():
 
         avg_loss = total_loss / len(train_loader)
 
-        # validate ทุก 10 epoch
+        # --- ขั้นตอนการวัดผล (Validation) ---
+        # ทำทุก 10 Epoch หรือ Epoch แรก
         if ep % 10 == 0 or ep == 1:
             model.eval()
             cer_sum = 0.0
@@ -160,6 +171,7 @@ def main():
 
             val_cer = cer_sum / max(1, n)
 
+            # บันทึกโมเดลที่ดีที่สุด (CER ต่ำที่สุด)
             if val_cer < best_cer:
                 best_cer = val_cer
                 torch.save(
@@ -179,6 +191,7 @@ def main():
                 f"best={best_cer:.4f}"
             )
         else:
+            # Epoch ทั่วไปจะแสดงแค่ค่า Loss เพื่อไม่ให้ Log ยาวเกินไป
             epoch_time_min = (time.time() - epoch_start) / 60
             print(
                 f"[Epoch {ep:03d}] "
@@ -188,7 +201,6 @@ def main():
 
     print("Training Finished.")
     print("Best CER:", best_cer)
-
 
 if __name__ == "__main__":
     main()
