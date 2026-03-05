@@ -1,0 +1,282 @@
+import os
+import cv2
+import numpy as np
+import pytesseract
+import sys
+import io
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import warnings
+import re
+import matplotlib.pyplot as plt
+from PIL import Image
+
+# Force UTF-8 encoding for Thai characters
+try:
+    if hasattr(sys.stdout, 'buffer'):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+except Exception:
+    pass
+
+warnings.filterwarnings("ignore")
+
+# ==========================================
+# 1. Configuration & Path Settings
+# ==========================================
+IMAGE_PATH = r"C:\Desktop old\Study\Project_OCR_Private\83911_page_0.png"
+MODEL_PATH = r"C:\Desktop old\Study\Project_OCR_Private\Models\model_read_numberthaiV1_pytorch.pth"
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f"Using device: {device}")
+
+# ==========================================
+# 2. PyTorch Model Definition
+# ==========================================
+class ThaiDigitModel(nn.Module):
+    def __init__(self):
+        super(ThaiDigitModel, self).__init__()
+        self.block1 = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=3, padding=1, bias=False), nn.BatchNorm2d(32), nn.ReLU(inplace=True),
+            nn.Conv2d(32, 32, kernel_size=3, padding=1, bias=False), nn.BatchNorm2d(32), nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2)
+        )
+        self.block2 = nn.Sequential(
+            nn.Conv2d(32, 64, kernel_size=3, padding=1, bias=False), nn.BatchNorm2d(64), nn.ReLU(inplace=True),
+            nn.Conv2d(64, 64, kernel_size=3, padding=1, bias=False), nn.BatchNorm2d(64), nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2)
+        )
+        self.block3 = nn.Sequential(
+            nn.Conv2d(64, 128, kernel_size=3, padding=1, bias=False), nn.BatchNorm2d(128), nn.ReLU(inplace=True),
+            nn.Conv2d(128, 128, kernel_size=3, padding=1, bias=False), nn.BatchNorm2d(128), nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2)
+        )
+        self.block4 = nn.Sequential(
+            nn.Conv2d(128, 256, kernel_size=3, padding=1, bias=False), nn.BatchNorm2d(256), nn.ReLU(inplace=True),
+            nn.Conv2d(256, 256, kernel_size=3, padding=1, bias=False), nn.BatchNorm2d(256), nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2)
+        )
+        self.classifier = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(9216, 512, bias=False), nn.BatchNorm1d(512), nn.ReLU(inplace=True), nn.Dropout(0.5),
+            nn.Linear(512, 10) 
+        )
+
+    def forward(self, x):
+        x = self.block1(x)
+        x = self.block2(x)
+        x = self.block3(x)
+        x = self.block4(x)
+        x = self.classifier(x)
+        return x
+
+def preprocess_for_pytorch(roi):
+    target_size = (96, 96)
+    h, w = roi.shape
+    if h == 0 or w == 0: return None
+    roi = cv2.copyMakeBorder(roi, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=0)
+    h, w = roi.shape
+    canvas = np.zeros(target_size, dtype=np.float32)
+    scale = min(76/h, 76/w)
+    new_w, new_h = int(w * scale), int(h * scale)
+    if new_w <= 0 or new_h <= 0: return None
+    resized = cv2.resize(roi, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    y_off, x_off = (target_size[0] - new_h) // 2, (target_size[1] - new_w) // 2
+    canvas[y_off:y_off+new_h, x_off:x_off+new_w] = resized.astype(np.float32) / 255.0
+    return torch.from_numpy(canvas).unsqueeze(0).unsqueeze(0)
+
+# ==========================================
+# 3. Execution Pipeline
+# ==========================================
+digit_model = ThaiDigitModel().to(device)
+if os.path.exists(MODEL_PATH):
+    digit_model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+    digit_model.eval()
+    print("Model loaded successfully.")
+
+if os.path.exists(IMAGE_PATH):
+    img_bgr = cv2.imread(IMAGE_PATH)
+    if img_bgr is not None:
+        sf = 3.0 
+        img_res = cv2.resize(img_bgr, None, fx=sf, fy=sf, interpolation=cv2.INTER_CUBIC)
+        pad = int(40 * sf)
+        img_res = cv2.copyMakeBorder(img_res, pad, pad, pad, pad, cv2.BORDER_CONSTANT, value=(255, 255, 255))
+        gray = cv2.cvtColor(img_res, cv2.COLOR_BGR2GRAY)
+        
+        # 3.2 Tesseract Detection
+        custom_config = r'--oem 1 --psm 4' 
+        tes_data = pytesseract.image_to_data(gray, lang='tha', config=custom_config, output_type=pytesseract.Output.DICT)
+        
+        tesseract_results = []
+        for i in range(len(tes_data['text'])):
+            txt = tes_data['text'][i].strip()
+            conf = int(tes_data['conf'][i]) if str(tes_data['conf'][i]).isdigit() else -1
+            if txt and (conf >= 0):
+                x, y, w, h = tes_data['left'][i], tes_data['top'][i], tes_data['width'][i], tes_data['height'][i]
+                
+                # [GARBAGE FILTER]: กรองตัวอักษรขยะจากตราสัญลักษณ์ (ซ่, ฯ, ฯลฯ)
+                # ปกติถ้าไม่ใช่ตัวเลขไทย และมีขนาดเล็กมาก หรือเป็นอักขระตัวเดียวที่ไม่อยู่ในบริบท
+                if h < 10 * sf and not any(c in '๐๑๒๓๔๕๖๗๘๙' for c in txt): 
+                    continue
+                
+                # [SCRUB]: ลบตัวเลขที่ Tesseract อ่านได้ออกจากข้อความไทยทิ้งไปก่อน
+                if any(c in 'ก-ฮ' for c in txt):
+                    txt = re.sub(r'[๐-๙0-9]', '', txt)
+                
+                if not txt.strip(): continue
+
+                txt = txt.replace('@', '๑').replace('o', '๐').replace('O', '๐').replace('|', '')
+                txt = txt.translate(str.maketrans('0123456789', '๐๑๒๓๔๕๖๗๘๙'))
+                
+                tesseract_results.append({
+                    "text": txt, "x": x, "y": y, "w": w, "h": h, "cx": x+w//2, "cy": y+h//2, "conf": conf,
+                    "is_digit": bool(re.match(r'^[๐-๙\s\.,]+$', txt)),
+                    "has_thai": bool(re.search(r'[ก-ฮ\u0E30-\u0E4E]', txt))
+                })
+
+        avg_h = np.median([r['h'] for r in tesseract_results if not r['is_digit']]) if tesseract_results else 25 * sf
+
+        # 3.3 PyTorch Digit Detection
+        pytorch_results = []
+        if digit_model:
+            blur_for_pt = cv2.GaussianBlur(gray, (3, 3), 0)
+            binary_inv = cv2.adaptiveThreshold(blur_for_pt, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2)
+            binary_inv = cv2.morphologyEx(binary_inv, cv2.MORPH_CLOSE, np.ones((2, 2), np.uint8))
+            
+            contours, _ = cv2.findContours(binary_inv, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            thai_digits = ['๐', '๑', '๒', '๓', '๔', '๕', '๖', '๗', '๘', '๙']
+            
+            for c in contours:
+                x, y, w, h = cv2.boundingRect(c)
+                if 7*sf < h < 100*sf and 3*sf < w < 100*sf:
+                    if h < (avg_h * 0.45): continue
+                    if w > h * 2.5 or h > w * 5.0: continue
+                    
+                    roi_img = binary_inv[y:y+h, x:x+w]
+                    roi_tensor = preprocess_for_pytorch(roi_img)
+                    if roi_tensor is not None:
+                        with torch.no_grad():
+                            output = digit_model(roi_tensor.to(device))
+                            probs = F.softmax(output, 1)
+                            prob, pred = torch.max(probs, 1)
+                        
+                        if prob.item() > 0.94: 
+                            pytorch_results.append({
+                                "text": thai_digits[pred.item()], "x": x, "y": y, "w": w, "h": h, 
+                                "cx": x+w//2, "cy": y+h//2, "conf": prob.item(), "roi_img": roi_img
+                            })
+
+        # NMS
+        pytorch_results.sort(key=lambda x: x['conf'], reverse=True)
+        final_pytorch = []
+        for p in pytorch_results:
+            if not any(abs(p['cx'] - f['cx']) < max(p['w'], f['w'])*0.5 and 
+                       abs(p['cy'] - f['cy']) < max(p['h'], f['h'])*0.5 for f in final_pytorch):
+                final_pytorch.append(p)
+
+        # 3.4 Hybrid Fusion
+        final_set = []
+        used_pytorch_indices = set()
+        for t_box in tesseract_results:
+            matched_pytorch = []
+            for idx, p in enumerate(final_pytorch):
+                if idx in used_pytorch_indices: continue
+                
+                ix, iy = max(t_box['x'], p['x']), max(t_box['y'], p['y'])
+                iw = max(0, min(t_box['x']+t_box['w'], p['x']+p['w']) - ix)
+                ih = max(0, min(t_box['y']+t_box['h'], p['y']+p['h']) - iy)
+                
+                if iw > 0 and ih > 0 and (iw * ih) > (p['w'] * p['h'] * 0.20):
+                    if p['text'] == '๘' and p['cy'] < (t_box['y'] + t_box['h'] * 0.4) and p['h'] < t_box['h'] * 0.7:
+                        used_pytorch_indices.add(idx) 
+                        continue
+                    matched_pytorch.append((idx, p))
+            
+            if matched_pytorch:
+                matched_pytorch.sort(key=lambda item: item[1]['x'])
+                if t_box['is_digit']:
+                    t_box['text'] = "".join([p['text'] for _, p in matched_pytorch])
+                for idx, _ in matched_pytorch: used_pytorch_indices.add(idx)
+                final_set.append(t_box)
+            else:
+                if not t_box['is_digit']:
+                    final_set.append(t_box)
+
+        for idx, p in enumerate(final_pytorch):
+            if idx not in used_pytorch_indices and p['conf'] > 0.995:
+                final_set.append(p)
+
+        # Line Grouping
+        final_set.sort(key=lambda k: k['cy'])
+        lines = []
+        if final_set:
+            median_h = np.median([k['h'] for k in final_set])
+            curr_line = [final_set[0]]
+            for item in final_set[1:]:
+                ref_cy = np.mean([k['cy'] for k in curr_line])
+                if abs(item['cy'] - ref_cy) < median_h * 0.45:
+                    curr_line.append(item)
+                else:
+                    lines.append(curr_line); curr_line = [item]
+            lines.append(curr_line)
+
+        print("\n--- FINAL RESULT START ---")
+        for line in lines:
+            line.sort(key=lambda k: k['x'])
+            out_str = ""
+            line_h = np.mean([k['h'] for k in line]) if line else 1
+            for i, it in enumerate(line):
+                if i > 0:
+                    gap = it['x'] - (line[i-1]['x'] + line[i-1]['w'])
+                    if gap > line_h * 0.45: out_str += " "
+                out_str += it['text']
+            
+            s = out_str.strip()
+            # Clean Spacing
+            s = re.sub(r'([ก-ฮ])\s+([\u0E30-\u0E4E])', r'\1\2', s)
+            s = re.sub(r'([\u0E30-\u0E4E])\s+([\u0E30-\u0E4E])', r'\1\2', s)
+            s = re.sub(r'พ\s*\.?\s*ศ\s*\.?\s*', 'พ.ศ. ', s)
+            s = re.sub(r'ตอนที่\s*', 'ตอนที่ ', s)
+            s = re.sub(r'หน้า\s*', 'หน้า ', s)
+            s = re.sub(r'เล่ม\s*', 'เล่ม ', s)
+            
+            # [SPECIFIC FIX]: แก้คำว่าสมเด็จ และลบตัวอักษรขยะตัวเดียวที่โดดออกมา
+            s = re.sub(r'สม\s*๘\s*็จ', 'สมเด็จ', s)
+            s = re.sub(r'^\s*[ซ่ฯศพ์ิุู]+\s*$', '', s) # ลบขยะตัวเดียวทั้งบรรทัด
+            s = re.sub(r'\s+[ซ่ฯศพ์ิุู]\s+', ' ', s)   # ลบขยะตัวเดียวกลางบรรทัด
+            
+            # [STRICT YEAR REPAIR]: ๒๕๖๘ 4-digit fix
+            s = re.sub(r'๒๕([๐-๙]{2})[๐-๙]+', r'๒๕\1', s)
+            
+            while re.search(r'([๐-๙])\s+([๐-๙])', s): s = re.sub(r'([๐-๙])\s+([๐-๙])', r'\1\2', s)
+            s = re.sub(r'[|#_=<>\*\\/]', '', s)
+            s = re.sub(r'([ก-ฮ\u0E30-\u0E4E])([๐-๙0-9])', r'\1 \2', s)
+            s = re.sub(r'([๐-๙0-9])([ก-ฮ\u0E30-\u0E4E])', r'\1 \2', s)
+            s = re.sub(r'\s+', ' ', s).strip()
+            
+            # กรองบรรทัดที่สั้นเกินไปและมีแต่อักขระแปลกๆ
+            if s and len(re.findall(r'[ก-ฮ๐-๙0-9a-zA-Z]', s)) / max(1, len(s)) > 0.4:
+                print(s)
+        print("--- FINAL RESULT END ---")
+
+        # ==========================================
+        # 4. Visualization (Enhanced Debugging)
+        # ==========================================
+        plt.rcParams['figure.dpi'] = 150 
+        img_display = img_res.copy()
+
+        for t in tesseract_results:
+            cv2.rectangle(img_display, (t['x'], t['y']), (t['x'] + t['w'], t['y'] + t['h']), (0, 255, 0), 2)
+            label = f"T:{t['text']}" if len(t['text']) < 12 else "T:Long"
+            cv2.putText(img_display, label, (t['x'], t['y'] + t['h'] + 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 180, 0), 1)
+
+        for p in final_pytorch:
+            cv2.rectangle(img_display, (p['x'], p['y']), (p['x'] + p['w'], p['y'] + p['h']), (0, 0, 255), 3)
+            cv2.putText(img_display, p['text'], (p['x'], p['y'] - 12), cv2.FONT_HERSHEY_SIMPLEX, 1.3, (0, 0, 255), 2)
+
+        plt.figure(figsize=(22, 16), dpi=150)
+        plt.imshow(cv2.cvtColor(img_display, cv2.COLOR_BGR2RGB), interpolation='bilinear')
+        plt.axis('off'); plt.show()
+else:
+    print(f"Image not found at: {IMAGE_PATH}")
