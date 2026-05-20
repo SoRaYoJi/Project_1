@@ -1,0 +1,12 @@
+streamlit
+opencv-python-headless
+pillow
+numpy
+torch
+torchvision
+pandas
+python-dotenv
+google-genai
+streamlit-drawable-canvas
+python-docx
+reportlab
